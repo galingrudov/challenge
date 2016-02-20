@@ -6,6 +6,6 @@ CC=gcc
 CP=cp
 PROGRAM_NAME=UdpSniffer
 exec: UdpSniffer.o
-	$(CC) -o bin/$(PROGRAM_NAME) UdpSniffer.o 
+	$(CC) -o bin/$(PROGRAM_NAME) UdpSniffer.o -lpcap 
 UdpSniffer.o: src/UdpSniffer.c
 	$(CC) -c src/UdpSniffer.c
