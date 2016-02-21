@@ -1,83 +1,102 @@
+#include <pcap.h>
 #include <stdio.h>
-#include <stdlib.h>
-#include <pcap.h>  /* GIMME a libpcap plz! */
-#include <errno.h>
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include <arpa/inet.h>
-#include <netinet/if_ether.h> /* includes net/ethernet.h */
-int interfaceInformation(char *dev, char *net, char *mask)
+#include <string.h>
+
+#define SESSION_TIMEOUT 1000
+#define MAGIC_NUMBER 33
+// this function return all network devices
+int get_all_interfaces(pcap_if_t **alldevsp);
+
+
+int get_defalult_interface(char ** dev);
+
+
+int sniffing_udp(char* dev);
+
+void got_udp_packet(u_char *args, const struct pcap_pkthdr *header,
+	    const u_char *packet);
+int main(int argc, char *argv[])
 {
-  char errbuf[PCAP_ERRBUF_SIZE];
-  bpf_u_int32 netp; /* ip          */
-  bpf_u_int32 maskp;/* subnet mask */
-  struct in_addr addr;
-int ret;   /* return code */
-  /* ask pcap to find a valid device for use to sniff on */
-  dev = pcap_lookupdev(errbuf);
 
-  /* error checking */
-  if(dev == NULL)
+  char *dev;// The device to sniff on
+  char error[PCAP_ERRBUF_SIZE]; // error string
+
+  if (get_defalult_interface(&dev)==-1)
   {
-   printf("%s\n",errbuf);
-   exit(1);
+    return (1);
   }
-
   /* print out device name */
   printf("DEV: %s\n",dev);
 
-  /* ask pcap for the network address and mask of the device */
-  ret = pcap_lookupnet(dev,&netp,&maskp,errbuf);
-
-  if(ret == -1)
+  if(sniffing_udp(dev)==-1)
   {
-   printf("%s\n",errbuf);
-   exit(1);
+    return (1); 
   }
-
-  /* get the network address in a human readable form */
-  addr.s_addr = netp;
-  net = inet_ntoa(addr);
-
-  if(net == NULL)/* thanks Scott :-P */
-  {
-    perror("inet_ntoa");
-    exit(1);
-  }
-
-  printf("NET: %s\n",net);
-
-  /* do the same as above for the device's mask */
-  addr.s_addr = maskp;
-  mask = inet_ntoa(addr);
-  
-  if(mask == NULL)
-  {
-    perror("inet_ntoa");
-    exit(1);
-  }
-  
-  printf("MASK: %s\n",mask);
-
+  return(0);
 }
 
-int main(int argc, char **argv)
+int get_all_interfaces(pcap_if_t **alldevsp)
 {
-  char *dev; /* name of the device to use */
-  char *net; /* dot notation of the network address */
-  char *mask;/* dot notation of the network mask    */
-  int ret;   /* return code */
-  pcap_t* descr; //pcap descriptor
-  struct pcap_pkthdr hdr;     /* pcap.h */
-  struct ether_header *eptr;  /* net/ethernet.h */
-  char errbuf[PCAP_ERRBUF_SIZE];
-  const u_char *packet;
-  ret = interfaceInformation(dev, net, mask);
-  if (ret == -1)
+  return 2;
+}
+int get_defalult_interface(char ** dev)
+{
+  char error[PCAP_ERRBUF_SIZE]; // error string
+  *dev = pcap_lookupdev(error);
+  if (*dev == NULL)
   {
-    perror("cannot get interface information. Are you root?");
-    exit(1);
+    fprintf(stderr, "Couldn't find default device: %s\n", error);
+    return (-1);
+  }
+  return 0;
+}
+
+int sniffing_udp(char* dev)
+{
+  pcap_t *handle;                // Session handle
+  char filter_exp[] = "udp and ip[4:2]==33"; //The filter expression
+  bpf_u_int32 mask;              //Our netmask
+  bpf_u_int32 net;               //Our IP
+  struct pcap_pkthdr header;     // The header that pcap gives us
+  const u_char *packet;          //The actual packet
+  struct bpf_program fp;         //The compiled filter
+  char errbuf[PCAP_ERRBUF_SIZE]; // error string
+
+// Find the properties for the device
+  if (pcap_lookupnet(dev, &net, &mask, errbuf) == -1)
+  {
+    fprintf(stderr, "Couldn't get netmask for device %s: %s\n", dev, errbuf);
+    net = 0;
+    mask = 0;
   }
 
-  return 0;
+// Open the session
+  handle = pcap_open_live(dev, BUFSIZ, 0, 1000, errbuf);
+  if (handle == NULL)
+  {
+    fprintf(stderr, "Couldn't open device %s: %s\n", dev, errbuf);
+    return(-1);
+  }
+
+// Compile  filter
+  if (pcap_compile(handle, &fp, filter_exp, 0, net) == -1)
+  {
+    fprintf(stderr, "Couldn't parse filter %s: %s\n", filter_exp, pcap_geterr(handle));
+    return(-1);
+  }
+//and apply filter
+  if (pcap_setfilter(handle, &fp) == -1)
+  {
+    fprintf(stderr, "Couldn't install filter %s: %s\n", filter_exp, pcap_geterr(handle));
+    return(-1);
+  }
+// start pcap_loop() that call a callback function every time a packet is sniffed that meets our filter requirements
+  pcap_loop(handle,10,got_udp_packet,NULL);
+}
+
+
+void got_udp_packet(u_char *args, const struct pcap_pkthdr *header,
+	    const u_char *packet)
+{
+  fprintf(stdout, "working");
 }
