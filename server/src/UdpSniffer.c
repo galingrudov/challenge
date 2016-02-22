@@ -47,14 +47,16 @@ The second field (4 bits) is the Internet Header Length (IHL), which is the numb
 
 int handle;
 
-int linkhdrlen; // len of the link layer header 
+int linkhdrlen; // length of the link layer header 
 
 
 // functions
 //receive destination adress and id_ip from Ip header
 int get_ip_header_info(u_char* buff, char** dst_ip, u_int* ip_len);
 
+// function ger the destination port and udp data
 int get_udp_info(u_char* buff, u_int16_t *port, char** data);
+
 // this function return all network devices
 int get_all_interfaces(pcap_if_t **alldevsp);
 
@@ -68,7 +70,7 @@ int sniffing_udp(char* dev);
 void got_udp_packet(u_char *args, const struct pcap_pkthdr *header,
 	     const u_char *packet);
 
-// depending on the interface type kalkulate its header lenght
+// depending on the interface type calculate its header length
 int calculate_link_len_h(pcap_t * pc_hdl);
 
 // open udp socket
@@ -83,12 +85,9 @@ int main(int argc, char *argv[])
   char *dev = "any";// The device to sniff on
   char error[PCAP_ERRBUF_SIZE]; // error string
 
-  //if (get_defalult_interface(&dev)==-1)
-  //{
-  //  return (1);
-  //}
-  /* print out device name */
+// print out device name
   printf("DEV: %s\n",dev);
+
 
   if(sniffing_udp(dev)==-1)
   {
@@ -169,7 +168,6 @@ void got_udp_packet(u_char *args, const struct pcap_pkthdr *header,
   u_short port;
   u_int ip_len;
   buff += linkhdrlen; //we don't need any information from interface protocol
-  printf("LEN = %d",linkhdrlen);
   if(get_ip_header_info(buff, &dst_addr, &ip_len) == -1)
     return;
   buff += ip_len;
@@ -206,15 +204,13 @@ for(i = 0; i < cpu_cores; ++i)
 
 for(i=0; i< fork_count;++i)
   wait(NULL);
-
-fprintf(stdout, "working dst_sddr = %s, iplen=%d, cores =%d\n", dst_addr, ip_len, cpu_cores);
 }
 
 int get_ip_header_info(u_char* buff, char** dst_ip, u_int *ip_len)
 {
 
   const struct sniff_ip *ip; // The IP header
- // u_int size_ip,magic_num;
+
   ip = (struct sniff_ip*)buff;
 
   *ip_len = IP_HL(ip)*4; // convert to bites.*32 to receive  bits and then / 8 to receive bites
@@ -223,17 +219,9 @@ int get_ip_header_info(u_char* buff, char** dst_ip, u_int *ip_len)
     fprintf(stderr, "Invalid IP header length: %u bytes\n", *ip_len);
     return (-1);
   }
-  //magic_num = ntohs(ip->ip_id);
-//  *ip_len = size_ip;
+
   *dst_ip = inet_ntoa(ip->ip_src);
-  return (0); 
-//fprintf(stdout,"TTL %d: ",ip->ip_ttl);
-//        fprintf(stdout,"%s\n ",
-  //              inet_ntoa(ip->ip_src));
- //      fprintf(stdout,"%s\n",
-    //          inet_ntoa(ip->ip_dst));
-//printf("dest =%d\n",ntohs(ip->ip_dst.s_addr));
-//printf("size is %d\n",size_ip);
+  return (0);
 }
 
 
@@ -275,10 +263,13 @@ int send_data(char * dst_ip, u_short port, char* data)
   address.sin_family = AF_INET;
   address.sin_addr.s_addr = inet_addr(dst_ip);
   address.sin_port = htons(port);
-  printf("handle: %d, data %s, addr %s, port %d\n",handle, data, dst_ip, port);
-  sleep(5);
+  //printf("handle: %d, data %s, addr %s, port %d\n",handle, data, dst_ip, port);
+ //client is needed some time to establish connection
+
+  printf("sleep for 3 sec\n");
+  sleep(3);
   int sent_bytes = sendto(handle, data, strlen(data),0,(const struct sockaddr*) &address, sizeof(struct sockaddr_in));
-  printf("sent bytes %d, bytes to send %d\n",sent_bytes,strlen(data) );
+ // printf("sent bytes %d, bytes to send %d\n",sent_bytes,strlen(data) );
   if(sent_bytes != strlen(data))
   {
     fprintf(stderr, "failed to send packet\n");
