@@ -17,6 +17,11 @@
 // ethernet headers are always exactly 14 bytes 
 #define SIZE_ETHERNET 14
 
+//loopbach header is 4 bytes
+#define SIZE_LOOPBACK 4
+
+// Pseudo-device that captures on all interfaces
+#define SIZE_OF_ANY  16
 // IP header
 struct sniff_ip
 {
@@ -41,6 +46,10 @@ The second field (4 bits) is the Internet Header Length (IHL), which is the numb
 #define IP_HL(ip)		(((ip)->ip_vhl) & 0x0f)
 
 int handle;
+
+int linkhdrlen; // len of the link layer header 
+
+
 // functions
 //receive destination adress and id_ip from Ip header
 int get_ip_header_info(u_char* buff, char** dst_ip, u_int* ip_len);
@@ -49,30 +58,35 @@ int get_udp_info(u_char* buff, u_int16_t *port, char** data);
 // this function return all network devices
 int get_all_interfaces(pcap_if_t **alldevsp);
 
-
+// return default interface on the current machine
 int get_defalult_interface(char ** dev);
 
-
+// start sniffing for data on device dev
 int sniffing_udp(char* dev);
 
+// call back function using from pcap. It is called every time when sutable packet is fined
 void got_udp_packet(u_char *args, const struct pcap_pkthdr *header,
-	    const u_char *packet);
+	     const u_char *packet);
+
+// depending on the interface type kalkulate its header lenght
+int calculate_link_len_h(pcap_t * pc_hdl);
 
 // open udp socket
 int init_socket();
 
+//sent data using udp socket 
 int send_data(char * dst_ip, u_short port, char* data);
 
 int main(int argc, char *argv[])
 {
 
-  char *dev;// The device to sniff on
+  char *dev = "any";// The device to sniff on
   char error[PCAP_ERRBUF_SIZE]; // error string
 
-  if (get_defalult_interface(&dev)==-1)
-  {
-    return (1);
-  }
+  //if (get_defalult_interface(&dev)==-1)
+  //{
+  //  return (1);
+  //}
   /* print out device name */
   printf("DEV: %s\n",dev);
 
@@ -119,12 +133,16 @@ int sniffing_udp(char* dev)
   }
 
 // Open the session
-  handle = pcap_open_live(dev, BUFSIZ, 0, 1000, errbuf);
+  handle = pcap_open_live(dev, BUFSIZ, 1, 1000, errbuf);
   if (handle == NULL)
   {
     fprintf(stderr, "Couldn't open device %s: %s\n", dev, errbuf);
     return(-1);
   }
+
+// calculate the length of the current inteface
+  if((linkhdrlen = calculate_link_len_h(handle))== -1)
+   return -1;
 
 // Compile  filter
   if (pcap_compile(handle, &fp, filter_exp, 0, net) == -1)
@@ -144,14 +162,14 @@ int sniffing_udp(char* dev)
 
 
 void got_udp_packet(u_char *args, const struct pcap_pkthdr *header,
-	    const u_char *packet)
+	   const  u_char *packet)
 {
   u_char * buff = packet;
   char * dst_addr,*data;
   u_short port;
   u_int ip_len;
-  buff += SIZE_ETHERNET; //we don't need any information from ethernet protocol
-
+  buff += linkhdrlen; //we don't need any information from interface protocol
+  printf("LEN = %d",linkhdrlen);
   if(get_ip_header_info(buff, &dst_addr, &ip_len) == -1)
     return;
   buff += ip_len;
@@ -164,7 +182,8 @@ void got_udp_packet(u_char *args, const struct pcap_pkthdr *header,
 
 // send information back to client
   pid_t pid;
-  int i;
+  int i,fork_count = 0;
+  pid_t pid_number;
 
 //write separate process for each cpu core
 for(i = 0; i < cpu_cores; ++i)
@@ -173,18 +192,22 @@ for(i = 0; i < cpu_cores; ++i)
 
   if (pid == 0)// if it is a child process
   {
-      pid_t pid_number = getpid(); // get number of the current process
-      u_char str_pid[255];
-      memset((char*)str_pid,0,sizeof str_pid );
-     snprintf(str_pid, sizeof str_pid, "%u",pid_number);
-    if(send_data(dst_addr,  port, "hhh")!= 0)
+    ++fork_count;
+    pid_number = getpid(); // get number of the current process
+    u_char str_pid[255];
+    memset((char*)str_pid,0,sizeof str_pid );
+    snprintf(str_pid, sizeof str_pid, "%d",pid_number);
+    if(send_data(dst_addr,  port, str_pid)!= 0)
       fprintf(stderr, "failed to send data");
     printf("pid number is %d\n",pid_number);
     return;
   }
 }
 
-  fprintf(stdout, "working dst_sddr = %s, iplen=%d, cores =%d\n", dst_addr, ip_len, cpu_cores);
+for(i=0; i< fork_count;++i)
+  wait(NULL);
+
+fprintf(stdout, "working dst_sddr = %s, iplen=%d, cores =%d\n", dst_addr, ip_len, cpu_cores);
 }
 
 int get_ip_header_info(u_char* buff, char** dst_ip, u_int *ip_len)
@@ -252,13 +275,49 @@ int send_data(char * dst_ip, u_short port, char* data)
   address.sin_family = AF_INET;
   address.sin_addr.s_addr = inet_addr(dst_ip);
   address.sin_port = htons(port);
-  printf("handle: %d\n, data %s,\n addr %s, port %d",handle, data, dst_ip, port);
+  printf("handle: %d, data %s, addr %s, port %d\n",handle, data, dst_ip, port);
+  sleep(5);
   int sent_bytes = sendto(handle, data, strlen(data),0,(const struct sockaddr*) &address, sizeof(struct sockaddr_in));
-  printf("sent bytes %d\n bytes to send %d\n",sent_bytes,strlen(data) );
+  printf("sent bytes %d, bytes to send %d\n",sent_bytes,strlen(data) );
   if(sent_bytes != strlen(data))
   {
     fprintf(stderr, "failed to send packet\n");
     return -1;
   }
   return 0;
+}
+
+int calculate_link_len_h(pcap_t * pc_hdl)
+{
+  int link_hdr_len, link_type;
+
+  // Determine the datalink layer type.
+  if ((link_type = pcap_datalink(pc_hdl)) < 0)
+  {
+    fprintf(stderr,"pcap_datalink(): %s\n", pcap_geterr(pc_hdl));
+    return-1;
+  }
+
+  // Set the datalink layer header size.
+  switch (link_type)
+  {
+  case DLT_NULL:
+    link_hdr_len = SIZE_LOOPBACK;
+    break;
+
+  case DLT_EN10MB:
+    link_hdr_len = SIZE_ETHERNET;
+    break;
+
+  case DLT_SLIP:
+  case DLT_PPP:
+    break;
+  case DLT_LINUX_SLL:
+   link_hdr_len = SIZE_OF_ANY;
+   break;
+  default:
+    printf("Unsupported datalink (%d)\n", link_type);
+    return -1 ;
+  }
+  return link_hdr_len;
 }
