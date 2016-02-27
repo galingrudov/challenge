@@ -1,3 +1,6 @@
+#define _GNU_SOURCE
+#include <sched.h>   //cpu_set_t , CPU_SET
+
 #include <pcap.h>
 #include <stdio.h>
 #include <string.h>
@@ -9,6 +12,7 @@
 #include <sys/socket.h>
 #include <fcntl.h>
 #include <errno.h>
+#include <unistd.h>  //sysconf
 
 // defines
 #define SESSION_TIMEOUT 1000
@@ -79,6 +83,9 @@ int init_socket();
 //sent data using udp socket 
 int send_data(char * dst_ip, u_short port, char* data);
 
+//stick the process id to the given core
+int stick_proccess_to_core(int core_id, int pid_id);
+
 int main(int argc, char *argv[])
 {
 
@@ -111,6 +118,7 @@ int get_defalult_interface(char ** dev)
   }
   return 0;
 }
+
 
 int sniffing_udp(char* dev)
 {
@@ -190,18 +198,23 @@ for(i = 0; i < cpu_cores; ++i)
 
   if (pid == 0)// if it is a child process
   {
-    ++fork_count;
+    ++fork_count; //increase number os created  processes
     pid_number = getpid(); // get number of the current process
-    u_char str_pid[255];
+    // glue pid_it to core
+    stick_proccess_to_core(i,pid_number);
+    u_char str_pid[255];// buffer fot pid_id
+    //init buffer with 0
     memset((char*)str_pid,0,sizeof str_pid );
+   //convert pid_id number to string
     snprintf(str_pid, sizeof str_pid, "%d",pid_number);
+    // sending pid_id back to sender of magic number
     if(send_data(dst_addr,  port, str_pid)!= 0)
       fprintf(stderr, "failed to send data");
-    printf("pid number is %d\n",pid_number);
-    return;
+    return; // return from the child process
   }
 }
 
+// because the child processes are int queue we have to call wait function for each child
 for(i=0; i< fork_count;++i)
   wait(NULL);
 }
@@ -230,7 +243,11 @@ int get_udp_info(u_char* buff, u_int16_t *port, char** data)
   struct udphdr* udp_hdr; // udp header strucrure defined in udp.h
   u_int16_t sourse_port;  // src port of udp packet
   char* cpu_num; // data in the udp packet
+
+//catch the udp header data fron buffer
   udp_hdr = (struct udphdr*)buff;
+
+  // we nned ort of sender beacuse we will send information to huim on that port
   *port = ntohs(udp_hdr->source);
   // getting data in the udp body
   *data =(char*)(buff + sizeof(struct udphdr));
@@ -260,16 +277,12 @@ int send_data(char * dst_ip, u_short port, char* data)
   struct sockaddr_in address;
   // reset address strucrute to zero
   memset((char*)&address, 0, sizeof(address));
+  // add data to socket structure
   address.sin_family = AF_INET;
   address.sin_addr.s_addr = inet_addr(dst_ip);
   address.sin_port = htons(port);
-  //printf("handle: %d, data %s, addr %s, port %d\n",handle, data, dst_ip, port);
- //client is needed some time to establish connection
-
-  printf("sleep for 3 sec\n");
-  sleep(3);
+// handle variable is a global varialble and it is initialise in the init_socket function 
   int sent_bytes = sendto(handle, data, strlen(data),0,(const struct sockaddr*) &address, sizeof(struct sockaddr_in));
- // printf("sent bytes %d, bytes to send %d\n",sent_bytes,strlen(data) );
   if(sent_bytes != strlen(data))
   {
     fprintf(stderr, "failed to send packet\n");
@@ -311,4 +324,16 @@ int calculate_link_len_h(pcap_t * pc_hdl)
     return -1 ;
   }
   return link_hdr_len;
+}
+
+int stick_proccess_to_core(int core_id, int pid_id)
+{
+  int num_cores = sysconf(_SC_NPROCESSORS_ONLN);
+  if (core_id < 0 || core_id >= num_cores)
+      return -1;
+
+   cpu_set_t cpu_set;
+   CPU_ZERO(&cpu_set);
+   CPU_SET(core_id, &cpu_set);
+   return sched_setaffinity(pid_id, sizeof(cpu_set), &cpu_set);
 }
