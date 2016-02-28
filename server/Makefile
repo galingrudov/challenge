@@ -2,10 +2,24 @@
 
 #declare some varialbles
 
+TARGETDIR = ./bin
 CC=gcc
-CP=cp
-PROGRAM_NAME=UdpSniffer
-exec: UdpSniffer.o
-	$(CC) -o bin/$(PROGRAM_NAME) UdpSniffer.o -lpcap 
-UdpSniffer.o: src/UdpSniffer.c
-	$(CC) -c src/UdpSniffer.c
+CFLAGS = -Wall
+ODIR = ./obj
+objects = $(addprefix $(ODIR)/,UdpSniffer.o)
+LDLIBS = -lpcap
+
+all: UdpSniffer 
+
+UdpSniffer: $(objects)
+	mkdir -p $(ODIR)
+	mkdir -p $(TARGETDIR)
+	$(CC) $(CFLAGS) -o $(TARGETDIR)/$@ $^ $(LDLIBS) 
+
+$(objects): src/UdpSniffer.c
+	$(CC) -c -o $@ src/UdpSniffer.c
+
+clean :
+	rm $(objects)
+
+
