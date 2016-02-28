@@ -180,12 +180,12 @@ void got_udp_packet(u_char *args, const struct pcap_pkthdr *header,
   struct timespec initial_time,  final_time;
 // CLOCK_REALTIME System-wide realtime clock .Can be used in different processes.
   clock_gettime(CLOCK_REALTIME, &initial_time);
-  buff += linkhdrlen; //we don't need any information from interface protocol
-  if(get_ip_header_info(buff, &dst_addr, &ip_len) == -1)
-    return;
-  buff += ip_len;
 
-  if(get_udp_info(buff, &port, &data)==-1)
+ //we don't need any information from interface protocol
+  if(get_ip_header_info(buff + linkhdrlen, &dst_addr, &ip_len) == -1)
+    return;
+
+  if(get_udp_info(buff + linkhdrlen + ip_len, &port, &data)==-1)
     return;
 
 // get num of cpu as int vaslue

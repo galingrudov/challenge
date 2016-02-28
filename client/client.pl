@@ -51,7 +51,7 @@ $| = 1;
  if( !validate_ip($dest)) 
  {
      # test if it is a host name
-     $dest = inet_ntoa(inet_aton($dest));
+     $dest = inet_ntoa(inet_aton($dest)or die "wrong host");
      #terst again
      if(!validate_ip($dest))
      {
