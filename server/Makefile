@@ -11,10 +11,12 @@ LDLIBS = -lpcap -lrt
 #librt (-lrt) 
 all: UdpSniffer 
 
-UdpSniffer: $(objects)
+$(ODIR):
 	mkdir -p $(ODIR)
+
+UdpSniffer: $(ODIR) $(objects)
 	mkdir -p $(TARGETDIR)
-	$(CC) $(CFLAGS) -o $(TARGETDIR)/$@ $^ $(LDLIBS) 
+	$(CC) $(CFLAGS) -o $(TARGETDIR)/$@ $(objects) $(LDLIBS) 
 
 $(objects): src/UdpSniffer.c
 	$(CC) -c -o $@ src/UdpSniffer.c
