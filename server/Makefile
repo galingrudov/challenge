@@ -7,8 +7,8 @@ CC=gcc
 CFLAGS = -Wall
 ODIR = ./obj
 objects = $(addprefix $(ODIR)/,UdpSniffer.o)
-LDLIBS = -lpcap
-
+LDLIBS = -lpcap -lrt
+#librt (-lrt) 
 all: UdpSniffer 
 
 UdpSniffer: $(objects)

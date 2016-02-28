@@ -5,7 +5,6 @@ use Net::RawIP;
 use Sys::Info;
 use Sys::Info::Constants qw( :device_cpu );
 use IO::Socket;
-
 # Flushing to STDOUT after each write
 $| = 1;
 
@@ -18,6 +17,16 @@ $| = 1;
           " local port: if not specified local port will be the same as destination port\n";
   }
 
+ sub validate_ip
+  {
+    my ($ip) = @_;
+    if(!($ip=~/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/ &&(($1<=255  && $2<=255 && $3<=255  &&$4<=255 ))))
+    {
+
+      return 0;
+    }
+   return 1;
+  }
   # take number of arguments
   my $num_arg = $#ARGV +1;
 #collect arguments
@@ -38,9 +47,17 @@ $| = 1;
 
 #validate input
   my $is_valid = 1;
-  if(!($dest=~/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/ &&(($1<=255  && $2<=255 && $3<=255  &&$4<=255 ))))
-  {
-     $is_valid = 0;
+
+ if( !validate_ip($dest)) 
+ {
+     # test if it is a host name
+     $dest = inet_ntoa(inet_aton($dest));
+     #terst again
+     if(!validate_ip($dest))
+     {
+       $is_valid = 0; 
+     } 
+     
   }
   if(!($dst_port=~/^([0-9]{1,5})$/ && ($1 <=65535)))
  {

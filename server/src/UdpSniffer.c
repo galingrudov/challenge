@@ -13,12 +13,13 @@
 #include <fcntl.h>
 #include <errno.h>
 #include <unistd.h>  //sysconf
+#include <time.h> // clockid_t
 
 // defines
 #define SESSION_TIMEOUT 1000
 #define MAGIC_NUMBER 33
 
-// ethernet headers are always exactly 14 bytes 
+// ethernet headers are always exactly 14 bytes
 #define SIZE_ETHERNET 14
 
 //loopbach header is 4 bytes
@@ -51,7 +52,7 @@ The second field (4 bits) is the Internet Header Length (IHL), which is the numb
 
 int handle;
 
-int linkhdrlen; // length of the link layer header 
+int linkhdrlen; // length of the link layer header
 
 
 // functions
@@ -74,13 +75,13 @@ int sniffing_udp(char* dev);
 void got_udp_packet(u_char *args, const struct pcap_pkthdr *header,
 	     const u_char *packet);
 
-// depending on the interface type calculate its header length
+// calculate interface header length
 int calculate_link_len_h(pcap_t * pc_hdl);
 
 // open udp socket
 int init_socket();
 
-//sent data using udp socket 
+//sent data using udp socket
 int send_data(char * dst_ip, u_short port, char* data);
 
 //stick the process id to the given core
@@ -171,10 +172,14 @@ int sniffing_udp(char* dev)
 void got_udp_packet(u_char *args, const struct pcap_pkthdr *header,
 	   const  u_char *packet)
 {
+  //start processing
   u_char * buff = packet;
   char * dst_addr,*data;
   u_short port;
   u_int ip_len;
+  struct timespec initial_time,  final_time;
+// CLOCK_REALTIME System-wide realtime clock .Can be used in different processes.
+  clock_gettime(CLOCK_REALTIME, &initial_time);
   buff += linkhdrlen; //we don't need any information from interface protocol
   if(get_ip_header_info(buff, &dst_addr, &ip_len) == -1)
     return;
@@ -200,13 +205,31 @@ for(i = 0; i < cpu_cores; ++i)
   {
     ++fork_count; //increase number os created  processes
     pid_number = getpid(); // get number of the current process
+
     // glue pid_it to core
     stick_proccess_to_core(i,pid_number);
-    u_char str_pid[255];// buffer fot pid_id
+    u_char str_pid[255],str_time_diff[255];// buffer fot pid_id, time processing
+
     //init buffer with 0
     memset((char*)str_pid,0,sizeof str_pid );
    //convert pid_id number to string
-    snprintf(str_pid, sizeof str_pid, "%d",pid_number);
+    snprintf(str_pid, sizeof str_pid, "pid_id = %d, ",pid_number);
+
+ //stop timer. The processing of the udp packet is finished.
+    clock_gettime(CLOCK_REALTIME, &final_time);
+
+   // calculate time diff
+// bpf_u_int3
+   bpf_u_int32 time_ns=(final_time.tv_sec - initial_time.tv_sec)*1e9 +
+          (final_time.tv_nsec - initial_time.tv_nsec);
+
+   //init buff with 0
+   memset((char*)str_time_diff, 0, sizeof str_time_diff);
+ // convert to string
+   sprintf(str_time_diff,"time = %d ",time_ns);
+
+// conc 
+    strcat(str_pid, str_time_diff);
     // sending pid_id back to sender of magic number
     if(send_data(dst_addr,  port, str_pid)!= 0)
       fprintf(stderr, "failed to send data");
@@ -281,7 +304,7 @@ int send_data(char * dst_ip, u_short port, char* data)
   address.sin_family = AF_INET;
   address.sin_addr.s_addr = inet_addr(dst_ip);
   address.sin_port = htons(port);
-// handle variable is a global varialble and it is initialise in the init_socket function 
+// handle variable is a global varialble and it is initialise in the init_socket function
   int sent_bytes = sendto(handle, data, strlen(data),0,(const struct sockaddr*) &address, sizeof(struct sockaddr_in));
   if(sent_bytes != strlen(data))
   {

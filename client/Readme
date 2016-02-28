@@ -1,0 +1,12 @@
+Used modules:
+
+use Net::RawIP;
+use Sys::Info;
+use IO::Socket;
+
+All modules are located in the Cpan library. You can install them using :
+cpanm MODUL::NAME 
+or 
+cpan -i MODUL::NAME
+
+
